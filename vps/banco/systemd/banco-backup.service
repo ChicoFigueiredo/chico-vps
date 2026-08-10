@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup diário do PostgreSQL compartilhado
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/banco/scripts/backup.sh

@@ -1,0 +1,22 @@
+# Segredos — nunca versionar.
+# O repositório guarda a FORMA da configuração; os valores moram no BitWarden.
+.env
+*.env
+!*.env.example
+!env.example
+
+# Credenciais geradas pelo novo-banco.sh
+vps/banco/credenciais/
+credenciais/
+
+# Chaves
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Dumps e dados de banco
+*.dump
+*.sql.gz
+dados/
+backups/

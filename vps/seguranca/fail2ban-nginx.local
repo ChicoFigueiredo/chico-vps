@@ -1,0 +1,39 @@
+# Bloqueio automatico de forca bruta nas senhas do nginx.
+#
+# Os tres paineis atras de basic auth — beth, focus e ia-monitor — gravam a
+# falha de senha no error_log. Sem isto, um atacante pode tentar senha
+# indefinidamente; a senha e forte, mas nao ha motivo para deixar tentar.
+
+[nginx-http-auth]
+enabled  = true
+backend  = auto
+port     = http,https
+# Cada painel escreve no proprio error_log; o global pega o resto.
+logpath  = /var/log/nginx/error.log
+           /var/log/nginx/beth.error.log
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+
+# Quem estoura o rate limit (limit_req) tambem entra na mira: e o padrao de
+# quem varre, nao de quem usa.
+[nginx-limit-req]
+enabled  = true
+backend  = auto
+port     = http,https
+logpath  = /var/log/nginx/error.log
+           /var/log/nginx/beth.error.log
+maxretry = 10
+findtime = 10m
+bantime  = 1h
+
+# Varredura por caminhos conhecidos de CMS/admin — exatamente o
+# comportamento do bot que derrubou o banco do basilio em julho.
+[nginx-botsearch]
+enabled  = true
+backend  = auto
+port     = http,https
+logpath  = /var/log/nginx/access.log
+maxretry = 5
+findtime = 10m
+bantime  = 6h

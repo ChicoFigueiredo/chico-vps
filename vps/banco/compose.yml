@@ -1,0 +1,95 @@
+# Servidor PostgreSQL compartilhado — "banco"
+#
+# Um servidor, muitos bancos. Cada projeto recebe um database e um role próprios,
+# criados por scripts/novo-banco.sh, e não enxerga os dos outros.
+#
+#   docker compose -f /opt/banco/compose.yml up -d
+#   /opt/banco/scripts/novo-banco.sh meuprojeto
+#
+# Como os projetos chegam aqui:
+#   - containers na VPS  -> entram na rede 'rede-banco' e usam o host 'banco'
+#   - da própria VPS     -> 127.0.0.1:5432
+#   - da sua máquina     -> túnel SSH (ver docs)
+
+name: banco
+
+services:
+  banco:
+    # Imagem oficial do PostgreSQL acrescida do pgvector. É o mesmo postgres:17
+    # com a extensão compilada — sem custo se você não usar, e já disponível
+    # quando precisar guardar embeddings (ia-monitor, ia-analizer, Beth).
+    #   CREATE EXTENSION vector;
+    image: pgvector/pgvector:pg17
+    container_name: banco
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina em /opt/banco/.env}
+      # Banco administrativo. Os bancos dos projetos são criados depois,
+      # um a um — este aqui fica vazio de propósito.
+      POSTGRES_DB: postgres
+      # --data-checksums só pode ser ligado no initdb, nunca depois. Detecta
+      # corrupção silenciosa de disco em troca de ~2% de CPU.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --data-checksums"
+      TZ: America/Sao_Paulo
+
+    # Só no loopback. Quem fala com o banco de fora da máquina passa por túnel
+    # SSH; a internet não alcança a 5432 em hipótese nenhuma.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+    volumes:
+      # Dados em disco, em bind mount — visível, copiável por rsync, e fora do
+      # ciclo de vida do container. O diretório é 999:999 com modo 0700 porque
+      # o postgres recusa PGDATA acessível a grupo/outros.
+      - ./dados:/var/lib/postgresql/data
+      - ./backups:/backups
+
+    # O padrão do Docker para /dev/shm é 64 MB, apertado para queries paralelas.
+    shm_size: 256mb
+
+    # Ajuste para uma máquina de 3.8 GB dividida com nginx, a Beth e mais quatro
+    # apps. Passado por flag em vez de postgresql.conf próprio: fica visível aqui
+    # e não corre o risco de perder os padrões do resto do arquivo.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB              # cache do próprio banco
+      - -c
+      - effective_cache_size=1GB          # estimativa do que o SO cacheia; só orienta o planner
+      - -c
+      - work_mem=8MB                      # por operação de sort/hash, NÃO por conexão
+      - -c
+      - maintenance_work_mem=64MB         # VACUUM, CREATE INDEX
+      - -c
+      - max_connections=50
+      - -c
+      - random_page_cost=1.1              # SSD: ler aleatório custa quase o mesmo que sequencial
+      - -c
+      - effective_io_concurrency=200      # SSD aguenta muita leitura em paralelo
+      - -c
+      - wal_compression=on
+      - -c
+      - checkpoint_completion_target=0.9  # espalha a escrita do checkpoint, evita pico de I/O
+      - -c
+      - log_min_duration_statement=1000   # registra query que passa de 1s
+      - -c
+      - timezone=America/Sao_Paulo
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      rede-banco:
+        # Três nomes para o mesmo servidor: use na connection string o que
+        # lembrar primeiro.
+        aliases: [banco, postgres, db]
+
+networks:
+  rede-banco:
+    external: true

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Atalho: redis-cli como usuário administrativo (default).
+#   cache                -> shell interativo
+#   cache DBSIZE         -> executa e sai
+#
+# Sem argumento: -it (shell interativo de verdade).
+# Com argumento: nem -i nem -t. O -i faria o docker exec consumir o stdin do
+# chamador — dentro de um script, ele engoliria as linhas seguintes.
+ADMIN=$(grep -oP '^REDIS_PASSWORD=\K.*' /opt/cache/.env)
+if [ $# -eq 0 ]; then
+  exec docker exec -it -e R="$ADMIN" cache sh -c 'exec redis-cli -a "$R" --no-auth-warning'
+fi
+exec docker exec -e R="$ADMIN" cache sh -c 'exec redis-cli -a "$R" --no-auth-warning "$@"' _ "$@"

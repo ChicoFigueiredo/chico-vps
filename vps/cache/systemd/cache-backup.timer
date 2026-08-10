@@ -1,0 +1,11 @@
+[Unit]
+Description=Backup do Redis, todo dia às 03:40
+
+[Timer]
+# 20 min depois do banco, para os dois não disputarem I/O.
+OnCalendar=*-*-* 03:40:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

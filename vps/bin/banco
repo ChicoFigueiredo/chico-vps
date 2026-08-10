@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Atalho: psql como superusuário.
+#   banco                -> psql interativo no 'postgres'
+#   banco meuprojeto     -> psql interativo nesse database
+#   banco -c 'select 1'  -> executa e sai
+#
+# Mesma regra do 'cache': -it só quando é realmente interativo, para o
+# docker exec não consumir o stdin de quem chamou.
+if [ $# -eq 0 ]; then
+  exec docker exec -it banco psql -U postgres
+fi
+case "$1" in
+  -*) exec docker exec banco psql -U postgres "$@" ;;
+   *) DB="$1"; shift
+      if [ $# -eq 0 ]; then exec docker exec -it banco psql -U postgres -d "$DB"
+      else exec docker exec banco psql -U postgres -d "$DB" "$@"; fi ;;
+esac

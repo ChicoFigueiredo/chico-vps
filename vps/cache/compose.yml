@@ -1,0 +1,53 @@
+# Servidor Redis compartilhado — "cache"
+#
+# Sobe AO LADO do redis do bolão (cache.bolao.maxmat1.com.br), que segue
+# intocado até o bolão ser remodelado. Por isso a porta no host é 6380: a
+# 6379 já é do bolão. Dentro da rede docker os dois usam 6379 normalmente,
+# em containers diferentes — não há conflito ali.
+#
+#   docker compose -f /opt/cache/compose.yml up -d
+#   /opt/cache/scripts/novo-cache.sh meuprojeto
+
+name: cache
+
+services:
+  cache:
+    image: redis:8-alpine
+    container_name: cache
+    restart: unless-stopped
+
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+
+    environment:
+      TZ: America/Sao_Paulo
+      # Usada só pelo healthcheck. O 'default' tem senha (via aclfile), então
+      # um PING anônimo devolve NOAUTH e o healthcheck nunca ficaria verde.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?defina em /opt/cache/.env}
+
+    # 6380 no host porque a 6379 é do redis do bolão. De dentro da rede
+    # 'rede-cache' o endereço é cache:6379 — a porta do host só interessa
+    # para túnel SSH e para debug a partir da própria VPS.
+    ports:
+      - "127.0.0.1:6380:6379"
+
+    volumes:
+      - ./conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      # Dados em disco: AOF, RDB e o arquivo de ACL dos projetos.
+      - ./dados:/data
+      - ./backups:/backups
+
+    healthcheck:
+      # Sem --no-auth-warning o aviso vai para stderr e polui o log do healthcheck.
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+    networks:
+      rede-cache:
+        aliases: [cache, redis]
+
+networks:
+  rede-cache:
+    external: true

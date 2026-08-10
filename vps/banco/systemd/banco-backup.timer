@@ -1,0 +1,11 @@
+[Unit]
+Description=Backup do PostgreSQL, todo dia às 03:20
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+# Se a máquina estava desligada na hora, roda assim que voltar.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
