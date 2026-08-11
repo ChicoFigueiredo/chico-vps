@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup diário do servidor de objetos compartilhado
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/s3/scripts/backup.sh

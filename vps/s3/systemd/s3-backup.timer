@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup do servidor de objetos, todo dia às 04:00
+
+[Timer]
+# 20 min depois do cache, que roda 20 min depois do banco. Os três em fila para
+# não disputarem I/O no mesmo disco.
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

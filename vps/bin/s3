@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Atalho: weed shell no servidor de objetos.
+#   s3                     -> shell interativo
+#   s3 s3.bucket.list      -> executa e sai
+#   s3 s3.user.list        -> idem
+#
+# Mesma regra do 'banco' e do 'cache': -it só quando é realmente interativo.
+# Com argumento, o -i faria o docker exec consumir o stdin do chamador — dentro
+# de um script, ele engoliria as linhas seguintes.
+if [ $# -eq 0 ]; then
+  exec docker exec -it s3 weed shell -master=s3:9333
+fi
+exec docker exec s3 sh -c 'echo "$@" | weed shell -master=s3:9333' _ "$@"

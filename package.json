@@ -1,0 +1,12 @@
+{
+  "name": "chico-vps",
+  "private": true,
+  "description": "Operação das VPS a partir daqui — sem precisar lembrar de comando de servidor.",
+  "scripts": {
+    "s3:tunel": "bash scripts/s3-tunel.sh",
+    "s3:novo": "bash scripts/s3-novo.sh",
+    "s3:backup": "bash scripts/s3-backup.sh",
+    "s3:puxar": "bash scripts/s3-puxar.sh",
+    "s3:status": "bash scripts/s3-status.sh"
+  }
+}

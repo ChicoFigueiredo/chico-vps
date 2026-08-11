@@ -1,0 +1,132 @@
+# Servidor de objetos compartilhado — "s3"
+#
+# Armazenamento compatível com a API da AWS S3. Um servidor, muitos buckets.
+# Cada projeto recebe bucket e credencial próprios, criados por
+# scripts/novo-s3.sh, e não enxerga os dos outros.
+#
+#   docker compose -f /opt/s3/compose.yml up -d
+#   /opt/s3/scripts/novo-s3.sh meuprojeto
+#
+# Como os projetos chegam aqui:
+#   - containers na VPS  -> entram na rede 'rede-s3' e usam o endpoint http://s3:8333
+#   - da própria VPS     -> http://127.0.0.1:9000
+#   - da sua máquina     -> túnel SSH (bun run s3:tunel)
+#
+# ── Por que SeaweedFS e não MinIO ───────────────────────────────────────────
+# O MinIO era o padrão de fato, mas em maio/2025 a administração foi removida
+# do console da edição community e em abril/2026 o repositório foi arquivado.
+# Adotar MinIO hoje seria colocar os arquivos de todos os projetos num daemon
+# que não recebe mais patch de segurança. O SeaweedFS é Apache-2.0, tem mais de
+# dez anos de estrada, segue em desenvolvimento ativo e traz painel próprio.
+
+name: s3
+
+services:
+  # Um único processo com os quatro papéis do SeaweedFS: master (coordena),
+  # volume (guarda os bytes), filer (a árvore de diretórios) e o gateway S3.
+  # Em cluster eles moram em máquinas diferentes; numa VPS de 3.8 GB, separá-los
+  # só multiplicaria processos sem ganhar nada.
+  s3:
+    image: chrislusf/seaweedfs:4.41
+    container_name: s3
+    restart: unless-stopped
+
+    command:
+      - server
+      # Identidade com que os componentes se anunciam uns aos outros. Precisa
+      # ser um nome resolvível DENTRO da rede docker — o padrão seria o IP do
+      # container, que muda a cada recriação e quebra as referências salvas.
+      - -ip=s3
+      # /data e não /dados: o entrypoint da imagem corrige a dona da pasta
+      # montada, mas só sabe deste caminho — ele roda como root, faz o chown
+      # para o usuário 'seaweed' (uid 1000) e só então larga o privilégio.
+      # Montar em outro lugar deixa o processo sem escrita, e o erro que aparece
+      # é "please verify /dados is writable", que não sugere nada disso.
+      - -dir=/data
+      - -filer
+      - -s3
+      - -s3.port=8333
+      # A imagem manda estatística anônima de uso para a seaweedfs.com a cada
+      # 24 h. Não é nada sensível, mas é tráfego de saída que ninguém pediu.
+      - -master.telemetry=false
+      # Volumes de 1 GB em vez dos 30 GB padrão. O SeaweedFS escreve os objetos
+      # dentro de arquivos-volume; com o padrão, o primeiro upload já criaria um
+      # arquivo enorme num disco de 67 GB dividido com todo o resto.
+      - -master.volumeSizeLimitMB=1024
+      # 0 = sem teto de quantidade. Com o padrão (8), a escrita para com
+      # "no free volumes" depois de ~8 GB, e o erro não diz que o limite é este.
+      - -volume.max=0
+
+    # Só no loopback — em nenhuma hipótese a internet alcança a 9000. Quem
+    # precisa de fora passa por túnel SSH.
+    #
+    # 9000 no host é a porta que todo mundo associa a "API S3"; dentro do
+    # container o SeaweedFS usa a sua própria, 8333.
+    ports:
+      - "127.0.0.1:9000:8333"
+
+    volumes:
+      # Bind mount: master, volume e filer guardam tudo aqui. Visível, copiável
+      # por rsync, e fora do ciclo de vida do container.
+      - ./dados:/data
+
+    healthcheck:
+      # O master responde o status do cluster; se ele está de pé, o resto subiu.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    environment:
+      TZ: America/Sao_Paulo
+
+    networks:
+      rede-s3:
+        # Três nomes para o mesmo servidor: use no endpoint o que lembrar
+        # primeiro. 'seaweedfs' existe para o dia em que o motor for trocado —
+        # aí só 's3' continua verdadeiro.
+        aliases: [s3, seaweedfs, storage]
+
+  # Painel de administração: buckets, usuários da API S3 e navegador de
+  # arquivos. Container separado de propósito — se ele cair, ou se um dia for
+  # trocado, a API S3 dos projetos não sente nada.
+  s3-admin:
+    image: chrislusf/seaweedfs:4.41
+    container_name: s3-admin
+    restart: unless-stopped
+    depends_on:
+      s3:
+        condition: service_healthy
+
+    command:
+      - admin
+      - -port=23646
+      # Descobre o filer sozinho, perguntando ao master.
+      - -master=s3:9333
+      # Mesma armadilha do serviço acima: o caminho tem de ser /data para o
+      # entrypoint acertar a dona da pasta antes de largar o root.
+      - -dataDir=/data
+      # Sem senha o painel abre para qualquer um que alcance a porta. Como ele
+      # só é alcançável pelo túnel, isto é a segunda tranca, não a primeira.
+      - -adminUser=${S3_ADMIN_USER:?defina em /opt/s3/.env}
+      - -adminPassword=${S3_ADMIN_PASSWORD:?defina em /opt/s3/.env}
+
+    # A porta do admin. Fechada para a internet pelo mesmo motivo da 9000, e é
+    # esta que o 'bun run s3:tunel' traz para a sua máquina.
+    ports:
+      - "127.0.0.1:9001:23646"
+
+    volumes:
+      - ./dados-admin:/data
+
+    environment:
+      TZ: America/Sao_Paulo
+
+    networks:
+      rede-s3:
+        aliases: [s3-admin]
+
+networks:
+  rede-s3:
+    external: true

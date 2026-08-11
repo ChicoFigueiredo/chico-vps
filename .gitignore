@@ -20,3 +20,8 @@ id_ed25519*
 *.sql.gz
 dados/
 backups/
+
+# Cópia local do backup do S3 — traz os segredos de todos os projetos.
+backups-s3/
+
+node_modules/
